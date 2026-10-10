@@ -7,7 +7,7 @@ import "../js/Format.js" as Format
 // 副标题(≠主标题才显)+ UP 主 + 业务类型标签 + 最近观看时间 + 进度文本。
 // 缩略图统一使用 CDN 400×225 WebP；失败显示重试，不自动请求大尺寸原图。
 // 交互:点击视频主体 → 在播放窗口起播;非视频主体 → 浏览器打开 linkUrl;
-// 点击封面 → 仅发 coverClicked(由宿主页打开封面预览,与起播/跳转互斥);
+// 点击封面 → 可播放时直接起播;不可播放时仅发 coverClicked(由宿主页打开封面预览);
 // 右键 FluMenu 保留打开链接。
 // 宽度由瀑布流列设定(默认 300,定宽列契约)。
 Item {
@@ -392,14 +392,21 @@ Item {
                 }
             }
 
-            // 封面点击:只开预览,不触发主体起播或跳转(互斥契约)
+            // 封面点击:可播放条目直接起播(与主体点击一致);不可播放(失效动态/无源)
+            // 才回落到封面原图预览。右键不拦截,穿透到下层 card_mouse 弹菜单。
             MouseArea {
                 id: cover_mouse
 
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
                 cursorShape: Qt.PointingHandCursor
-                onClicked: card_root.coverClicked(cover_area)
+                onClicked: {
+                    if (card_root.playable) {
+                        card_root.playInNewWindow()
+                    } else {
+                        card_root.coverClicked(cover_area)
+                    }
+                }
             }
         }
 

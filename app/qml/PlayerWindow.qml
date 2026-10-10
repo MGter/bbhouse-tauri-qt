@@ -20,8 +20,27 @@ FluWindow {
                                                     : qsTr("播放器")
 
     readonly property bool offscreen: Qt.platform.pluginName === "offscreen"
-    Component.onCompleted: if (!offscreen) PlayerController.attachMediaWindow(window)
-    onVisibleChanged: if (visible && !offscreen) PlayerController.attachMediaWindow(window)
+    // 起播即最大化:仅在"隐藏 → 可见"这一次打开动作上抬到最大化,覆盖首次创建与
+    // autoDestroy=false 的复用两条路径。因为只在打开沿触发,用户手动还原成窗口化后
+    // 不会被回弹;toggleFullscreen 退出全屏时按 prevVisibility 还原同样不受影响。
+    function maximizeOnOpen(fromVisibility) {
+        if (offscreen || !visible) return
+        if (fromVisibility !== Window.Hidden) return
+        if (visibility === Window.Windowed || visibility === Window.WindowedMaximized)
+            visibility = Window.Maximized
+    }
+    Component.onCompleted: {
+        if (!offscreen) PlayerController.attachMediaWindow(window)
+        maximizeOnOpen(Window.Hidden)
+    }
+    onVisibleChanged: {
+        if (visible && !offscreen) PlayerController.attachMediaWindow(window)
+        maximizeOnOpen(offscreen ? Window.Hidden : prevOpenVisibility)
+        if (visible) prevOpenVisibility = visibility
+    }
+    // 记录可见性变化前的状态,供 maximizeOnOpen 判断"是不是刚被打开"
+    property int prevOpenVisibility: Window.Hidden
+    onPrevOpenVisibilityChanged: {}
     // 播放列表完全收起，仅由底部控制面板手动切换；番剧模式隐藏。
     property bool panelExpanded: true
     readonly property int panelWidth: PlayerController.seasonMode ? 0
