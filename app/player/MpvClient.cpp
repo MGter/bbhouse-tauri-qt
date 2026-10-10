@@ -184,10 +184,14 @@ void MpvClient::takeEvents() {
                 break;
             case MPV_EVENT_FILE_LOADED:
                 if (requestedEntryId_ < 0 || startedEntryId_ != requestedEntryId_) break;
-                // DASH 的裸 m4s 流装载后内核不建轨道(mpv 0.41 实测 track-list 为空、
-                // audio-add 恒返回 -12/COMMAND),FILE_LOADED 事件却照常到达。
-                // 这里显式校验轨道：没有轨道就视为装载失败，让上层回落 durl 单流。
-                if (getPropertyDouble("track-list/count") < 1.0) {
+                // B 站 DASH 的裸 m4s 流在 mpv 0.41 上是"半成功"，且状态随机：
+                //   · 多数时候一条轨道都建不出来(track-list 为空，audio-add 恒返回 -12/COMMAND)
+                //   · 偶尔能建出**恰好 1 条视频轨、没有音轨**
+                // FILE_LOADED 两种情况都会照常到达。只校验 count>=1 会让第二种
+                // 情况被误判成装载成功，于是有画面但全程无声、也不再回落到durl 单流。
+                // 因此这里在 DASH 路径上额外要求"至少一条音频轨"，否则视为装载失败让上层回落。
+                if (getPropertyDouble("track-list/count") < 1.0 ||
+                    (requireAudioTrack_ && !hasAudioTrack())) {
                     emit loadRejected();
                     break;
                 }
@@ -287,6 +291,16 @@ bool MpvClient::getFlag(const QString &name) const {
     if (MpvLib::instance()->getProperty(handle_.get(), name.toUtf8(), mpvf::kFlag, &value) < 0)
         return false;
     return value != 0;
+}
+
+bool MpvClient::hasAudioTrack() const {
+    const double count = getPropertyDouble(QStringLiteral("track-list/count"));
+    for (int i = 0; i < static_cast<int>(count); ++i) {
+        if (getPropertyString(QStringLiteral("track-list/%1/type").arg(i)) ==
+            QLatin1String("audio"))
+            return true;
+    }
+    return false;
 }
 
 void MpvClient::setPropertyString(const QString &name, const QString &value) {
@@ -396,11 +410,15 @@ void MpvClient::loadDashCandidates(const QString &videoUrl, const QStringList &a
     pendingAudioUrls_ = audioUrls;
     pendingAudioUrls_.removeAll(QString());
     pendingAudioUrls_.removeDuplicates();
+    // DASH 裸流必须校验音轨：它可能只建出视频轨，那样会有画面但全程无声。
+    requireAudioTrack_ = true;
     loadFile(videoUrl, startSeconds);
 }
 
 void MpvClient::loadSingle(const QString &url, double startSeconds) {
     pendingAudioUrls_.clear();
+    // durl 单流/本地文件是完整容器，本身自带音视频；本地无声视频不应被误拒。
+    requireAudioTrack_ = false;
     loadFile(url, startSeconds);
 }
 

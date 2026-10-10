@@ -36,6 +36,8 @@ class MpvClient : public QObject {
     QString getPropertyString(const QString &name) const;
     double getPropertyDouble(const QString &name) const;
     bool getFlag(const QString &name) const;
+    // DASH裸流可能只建出视频轨而没有音轨，必须单独判断是否存在音频轨。
+    bool hasAudioTrack() const;
     // Explicit allowlist only: never exports paths, headers, track titles or metadata.
     QVariantMap diagnosticSnapshot() const;
     void setPropertyString(const QString &name, const QString &value);
@@ -94,6 +96,9 @@ class MpvClient : public QObject {
     void loadFile(const QString &url, double startSeconds);
     void cancelAudioLoad();
     QStringList pendingAudioUrls_;  // DASH 候选音轨（当前内核无法外挂，仅作记录）
+    // 本次装载是否必须存在音轨。仅 DASH 裸流为 true：它可能只建出视频轨，
+    // 那样会有画面但全程无声。durl 单流与本地文件是完整容器，不做此要求。
+    bool requireAudioTrack_ = false;
     qint64 requestedEntryId_ = -1;
     qint64 startedEntryId_ = -1;
     quint64 loadSerial_ = 0;
