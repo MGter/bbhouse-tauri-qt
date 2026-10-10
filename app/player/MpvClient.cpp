@@ -147,14 +147,7 @@ QVariantMap MpvClient::diagnosticSnapshot() const {
 
 QString MpvClient::lastCreateError() { return createError; }
 
-MpvClient::MpvClient(QObject *parent) : QObject(parent) {
-    audioWatchdog_.setSingleShot(true);
-    audioWatchdog_.setInterval(8000);
-    connect(&audioWatchdog_, &QTimer::timeout, this, [this] {
-        cancelAudioLoad();
-        tryNextAudioCandidate(MPV_ERROR_LOADING_FAILED);
-    });
-}
+MpvClient::MpvClient(QObject *parent) : QObject(parent) {}
 
 MpvClient::~MpvClient() {
     MpvLib *lib = MpvLib::instance();
@@ -192,10 +185,18 @@ void MpvClient::takeEvents() {
                 break;
             case MPV_EVENT_FILE_LOADED:
                 if (requestedEntryId_ < 0 || startedEntryId_ != requestedEntryId_) break;
-                // 外挂音轨补挂:audio-add 必须在主文件装载完成后发,否则被静默丢弃
+                // DASH 的裸 m4s 流装载后内核不建轨道(mpv 0.41 实测 track-list 为空、
+                // audio-add 恒返回 -12/COMMAND),FILE_LOADED 事件却照常到达。
+                // 这里显式校验轨道：没有轨道就视为装载失败，让上层回落 durl 单流。
+                if (getPropertyDouble("track-list/count") < 1.0) {
+                    emit loadRejected();
+                    break;
+                }
                 if (!pendingAudioUrls_.isEmpty()) {
                     emit audioLoadStarted();
-                    tryNextAudioCandidate(MPV_ERROR_LOADING_FAILED);
+                    pendingAudioUrls_.clear();
+                    handlePropertyChange(QStringLiteral("pause"));
+                    emit fileLoaded();
                     break;
                 }
                 // A new controller can still hold its idle/paused state even
@@ -353,46 +354,12 @@ quint64 MpvClient::commandAsync(const QStringList &args, QObject *context,
 }
 
 void MpvClient::cancelAudioLoad() {
-    audioWatchdog_.stop();
-    ++audioAttemptSerial_;
-    if (!audioCommandId_) return;
-    MpvLib::instance()->abortAsyncCommand(handle_.get(), audioCommandId_);
-    pendingCommands_.remove(audioCommandId_);
-    audioCommandId_ = 0;
-}
-
-void MpvClient::tryNextAudioCandidate(int previousError) {
-    if (requestedEntryId_ < 0 || startedEntryId_ != requestedEntryId_) return;
-    if (pendingAudioUrls_.isEmpty()) {
-        emit playbackError(previousError,
-                           QString::fromUtf8(MpvLib::instance()->errorString(previousError)));
-        return;
-    }
-    const QString audioUrl = pendingAudioUrls_.takeFirst();
-    const quint64 serial = loadSerial_;
-    const qint64 entryId = requestedEntryId_;
-    const quint64 attempt = ++audioAttemptSerial_;
-    audioWatchdog_.start();
-    audioCommandId_ = commandAsync({"audio-add", audioUrl, "select"}, this,
-        [this, serial, entryId, attempt](int result) {
-            if (serial != loadSerial_ || entryId != requestedEntryId_
-                    || attempt != audioAttemptSerial_) return;
-            audioCommandId_ = 0;
-            audioWatchdog_.stop();
-            if (result < 0) {
-                tryNextAudioCandidate(result);
-                return;
-            }
-            pendingAudioUrls_.clear();
-            handlePropertyChange(QStringLiteral("pause"));
-            emit fileLoaded();
-        });
+    // 音轨不再补挂（mpv 0.41 的 audio-add 不可用），DASH 统一回落 durl 单流。
 }
 
 void MpvClient::loadFile(const QString &url, double startSeconds) {
     if (!handle_) return;
     const quint64 serial = ++loadSerial_;
-    cancelAudioLoad();
     requestedEntryId_ = -1;
     setPropertyString("pause", "no");
     QStringList args = {"loadfile", url, "replace"};

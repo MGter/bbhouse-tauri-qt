@@ -69,8 +69,11 @@ class MpvClient : public QObject {
 
    signals:
     void fileLoaded();
-    // 主文件已就绪；音轨候选由内部的逐候选看门狗处理。
+    // 主文件已就绪（单流容器自带音视频轨道）。
     void audioLoadStarted();
+    // 装载后内核未建立任何轨道（DASH 裸流在内核 0.41 下的必然结果），
+    // 上层据此回落到 durl 单流，而不是当作成功。
+    void loadRejected();
     void playbackRestarted(double position);
     void playbackError(int errorCode, QString message);
     void ended();  // eof-reached 翻转(keep-open 语义,非 END_FILE)
@@ -90,11 +93,7 @@ class MpvClient : public QObject {
     QHash<quint64, std::function<void(int)>> pendingCommands_;
     void loadFile(const QString &url, double startSeconds);
     void cancelAudioLoad();
-    void tryNextAudioCandidate(int previousError);
-    quint64 audioCommandId_ = 0;
-    quint64 audioAttemptSerial_ = 0;
-    QTimer audioWatchdog_;
-    QStringList pendingAudioUrls_;  // 按 API 优先级，在 file-loaded 后逐一异步补挂
+    QStringList pendingAudioUrls_;  // DASH 候选音轨（当前内核无法外挂，仅作记录）
     qint64 requestedEntryId_ = -1;
     qint64 startedEntryId_ = -1;
     quint64 loadSerial_ = 0;

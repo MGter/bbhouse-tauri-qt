@@ -925,9 +925,22 @@ bool PlayerController::ensureKernel() {
         syncSystemMedia();
     });
     connect(client_, &MpvClient::audioLoadStarted, this, [this] {
-        // 视频已就绪，交由内核逐个音轨的 8 秒超时推进，避免重载同一坏音轨。
+        // 单流容器自带音视频轨道，主文件就绪即可解除候选看门狗。
         if (waitingFileLoaded_ && activeRequest_.generation == generation_)
             candidateWatchdog_.stop();
+    });
+    connect(client_, &MpvClient::loadRejected, this, [this] {
+        // 内核接受了 loadfile 却没有建立轨道：DASH 裸流在内核 0.41 下的必然结果。
+        // 当成候选失败处理，交给上层回落到 durl 单流（容器流自带音视频）。
+        if (!waitingFileLoaded_ || activeRequest_.generation != generation_) return;
+        waitingFileLoaded_ = false;
+        candidateWatchdog_.stop();
+        const int generation = generation_;
+        const int candidate = candidateIndex_;
+        QTimer::singleShot(0, this, [this, generation, candidate] {
+            if (generation == generation_ && candidate == candidateIndex_ && !waitingFileLoaded_)
+                tryNextVideoCandidate();
+        });
     });
     connect(client_, &MpvClient::playbackError, this, [this](int, const QString &message) {
         if (currentKey_.isEmpty() || activeRequest_.generation != generation_) return;
