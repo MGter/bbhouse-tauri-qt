@@ -58,11 +58,10 @@ MpvClient *MpvClient::create(QObject *parent) {
     // API proxy credentials must never enter the media engine.
     setOpt("http-proxy", "");
     setOpt("stream-lavf-o", "http_proxy=");
-    // 新版 mpv curl 后端在空 http-proxy 时仍读取进程代理环境；使用已显式
-    // 配置直连的 libavformat。旧版没有此选项，本来就使用该传输路径。
-    const int curlOption = lib->setOptionString(handle, "curl-enabled", "no");
-    if (curlOption < 0 && curlOption != MPV_ERROR_OPTION_NOT_FOUND)
-        qWarning() << "mpv option curl-enabled" << lib->errorString(curlOption);
+    // 不要禁用 mpv 的 curl 后端：实测 mpv 0.41 + curl-enabled=no 时，
+    // libavformat 传输层对B 站 CDN 握手必败（track-list 为空、
+    // time-pos 恒 nil、loadfile 报 -13 LOADING_FAILED），
+    // 而curl 后端正常。同一个 durl URL 仅切换此开关即可正常播放。
     setOpt("terminal", "no");
     setOpt("keep-open", "always");
     setOpt("loop-file", "no");
