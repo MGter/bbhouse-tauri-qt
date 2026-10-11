@@ -97,6 +97,28 @@ FluPage {
         pagination.pageCurrent = pageIndex
         grid.positionViewAtBeginning()
     }
+    // 榜单翻页(仅综合热门档):上一页/下一页整屏替换,而不是追加 ——
+    // 这样点快了也能原路翻回去。翻页后回到顶部。
+    function gotoPopularPage(delta) {
+        if (PopularController.busy) return
+        if (delta < 0) PopularController.prevPopularPage()
+        else PopularController.nextPopularPage()
+        PopularController.scrollOffset = 0
+        grid.positionViewAtBeginning()
+    }
+
+    // ---- 列表页快捷键入口(由 MainWindow 分发):J/K 翻页、U/D 上下翻一屏 ----
+    // 翻页沿用底部两个按钮的口径:综合热门整屏换页,其余档位按页码切片。
+    function pageStep(delta) {
+        if (popular) gotoPopularPage(delta)
+        else selectPage(pageIndex + delta)
+    }
+    function scrollStep(delta) {
+        var span = Math.max(40, grid.height * 0.9)
+        grid.contentY = Math.max(grid.originY,
+            Math.min(grid.contentY + delta * span,
+                     grid.originY + Math.max(0, grid.contentHeight - grid.height)))
+    }
     onSearchQueryChanged: {
         if (!stateReady) return
         PopularController.searchText = searchQuery
@@ -161,6 +183,12 @@ FluPage {
         }
     }
 
+    // 翻页边界提示(如"已经是最后一页了")不占版面,只弹一条轻提示
+    Connections {
+        target: PopularController
+        function onPageNotice(message) { infoBar.showInfo(message, 3000) }
+    }
+
     FluInfoBar { id: infoBar; root: page }
 
     ColumnLayout {
@@ -182,10 +210,15 @@ FluPage {
             }
             FluIconButton {
                 iconSource: FluentIcons.Refresh
-                Accessible.name: qsTr("刷新当前内容")
+                Accessible.name: qsTr("刷新（回到第 1 页取最新榜单）")
                 disabled: PopularController.busy
-                onClicked: PopularController.refresh()
-                FluTooltip { text: qsTr("刷新当前内容"); visible: parent.hovered; delay: 500 }
+                onClicked: {
+                    // 刷新即回到榜单第 1 页,所以滚动位置也回顶
+                    PopularController.scrollOffset = 0
+                    grid.positionViewAtBeginning()
+                    PopularController.refresh()
+                }
+                FluTooltip { text: qsTr("刷新（回到第 1 页取最新榜单）"); visible: parent.hovered; delay: 500 }
             }
         }
         RowLayout {
@@ -346,7 +379,10 @@ FluPage {
                         objectName: "popularCard"
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: grid.cardWidth
-                        height: implicitHeight
+                        // 统一高度:所有卡片与当前最高的一张等高,底边对齐 ——
+                        // 不再随「标题一行/两行、有无副标题、有无统计行」高矮不一。
+                        // implicitHeight 仍按内容算,供 measureCards 探测最高卡片。
+                        height: grid.cellHeight - 16
                         cardItem: cardData
                         showHistoryTime: false
                         showAuthor: cardData.business !== "pgc"
@@ -387,12 +423,40 @@ FluPage {
         RowLayout {
             visible: page.popular
             Layout.fillWidth: true
+            spacing: 8
             FluText {
                 Layout.fillWidth: true
                 text: qsTr("搜索仅筛选已加载内容 · 已加载 %1 条").arg(PopularController.pool.length)
                 elide: Text.ElideRight
                 font: FluTextStyle.Caption
                 textColor: FluTheme.fontSecondaryColor
+            }
+            // 榜单翻页:整屏换页,所以点快了可以直接翻回去
+            FluIconButton {
+                objectName: "popularPrevPageButton"
+                Layout.preferredWidth: 32
+                Layout.preferredHeight: 32
+                iconSize: 13
+                iconSource: FluentIcons.ChevronLeft
+                enabled: PopularController.canPrevPopularPage
+                Accessible.name: qsTr("上一页")
+                onClicked: page.gotoPopularPage(-1)
+                FluTooltip { text: qsTr("上一页"); visible: parent.hovered; delay: 500 }
+            }
+            FluText {
+                objectName: "popularPageLabel"
+                text: qsTr("第 %1 页").arg(PopularController.popularPage)
+            }
+            FluIconButton {
+                objectName: "popularNextPageButton"
+                Layout.preferredWidth: 32
+                Layout.preferredHeight: 32
+                iconSize: 13
+                iconSource: FluentIcons.ChevronRight
+                enabled: PopularController.canNextPopularPage
+                Accessible.name: qsTr("下一页")
+                onClicked: page.gotoPopularPage(1)
+                FluTooltip { text: qsTr("下一页"); visible: parent.hovered; delay: 500 }
             }
             FluButton {
                 visible: PopularController.hasMore

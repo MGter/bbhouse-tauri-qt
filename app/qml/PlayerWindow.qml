@@ -1,5 +1,6 @@
 import QtQuick
 import FluentUI
+import bbhouse
 import "controls"
 import "js/Format.js" as Format
 
@@ -54,6 +55,8 @@ FluWindow {
     property int prevAppBarHeight: 48
 
     property bool controlsShown: true
+    // 解析耗时超过一个阈值(见 slow_load 计时器)后切换骨架文案
+    property bool slowLoad: false
     // 自动隐藏计时已确认无操作；光标跟随面板隐藏，移动/离场立即恢复。
     readonly property bool cursorHidden: !controlsShown && !controlsLocked && video_click.containsMouse
     readonly property bool controlsLocked: playback_controls.interacting || top_hover.hovered
@@ -94,6 +97,23 @@ FluWindow {
             window.visibility = Window.FullScreen
         }
         pokeControls()
+    }
+
+    // 窗口处于最大化(含 WindowedMaximized)而非全屏
+    readonly property bool maximizedActive: !fullscreenActive
+                                            && (visibility === Window.Maximized
+                                                || visibility === Window.WindowedMaximized)
+
+    function restoreFromMaximized() {
+        window.visibility = Window.Windowed
+        pokeControls()
+    }
+
+    // Esc 逐级退出:全屏 → 退全屏;最大化 → 还原成窗口;已是窗口 → 关闭播放器回到选择界面
+    function escapeStep() {
+        if (fullscreenActive) toggleFullscreen()
+        else if (maximizedActive) restoreFromMaximized()
+        else window.close()
     }
 
     function unmountItems() {
@@ -164,60 +184,112 @@ FluWindow {
 
         // 键盘快捷键:焦点不在消费按键的控件(列表/按钮)时生效
         // (事件自焦点控件沿父链冒泡,列表导航/按钮空格先行消费,天然不抢占)
+        // 具体键位来自 Hotkeys 单例(设置页可改);Esc 固定为逐级退出。
+        //
+        // 「快进」键是双用途的:短按松手快进一段,按住不放进入倍速播放、松开还原原速 ——
+        // 所以快进动作必须落在 onReleased 上,按下只负责起长按计时。
+        property bool forwardKeyDown: false
+        property bool speedHolding: false
+        property real speedBeforeHold: 1.0
+
+        function endSpeedHold() {
+            if (!speedHolding) return
+            speedHolding = false
+            PlayerController.setSpeed(speedBeforeHold)
+        }
+
         Keys.onPressed: function (event) {
             if (playback_controls.menuOpen || entitlement_dialog.visible) {
                 event.accepted = false
                 return
             }
-            switch (event.key) {
-            case Qt.Key_Space:
+            if (event.key === Qt.Key_Escape) {
+                // 逐级退出:全屏退全屏 → 最大化还原成窗口 → 已是窗口则关掉播放器回选择界面
+                endSpeedHold()
+                window.escapeStep()
+                event.accepted = true
+                window.pokeControls()
+                return
+            }
+            var action = Hotkeys.match("player", event.key, event.modifiers)
+            switch (action) {
+            case "player.seekForward":
+                if (!event.isAutoRepeat) {
+                    forwardKeyDown = true
+                    speed_hold.restart()
+                }
+                event.accepted = true
+                break
+            case "player.seekBack":
+                PlayerController.seek(PlayerController.position - Hotkeys.seekStepSeconds)
+                event.accepted = true
+                break
+            case "player.volumeUp":
+                PlayerController.setVolumePercent(Hotkeys.volumeBy(PlayerController.volumePercent, 1))
+                event.accepted = true
+                break
+            case "player.volumeDown":
+                PlayerController.setVolumePercent(Hotkeys.volumeBy(PlayerController.volumePercent, -1))
+                event.accepted = true
+                break
+            case "player.playPause":
                 PlayerController.togglePlayPause()
                 event.accepted = true
                 break
-            case Qt.Key_Left:
-                PlayerController.seek(PlayerController.position - 5)
-                event.accepted = true
-                break
-            case Qt.Key_Right:
-                PlayerController.seek(PlayerController.position + 5)
-                event.accepted = true
-                break
-            case Qt.Key_Up:
-                PlayerController.setVolumePercent(PlayerController.volumePercent + 5)
-                event.accepted = true
-                break
-            case Qt.Key_Down:
-                PlayerController.setVolumePercent(PlayerController.volumePercent - 5)
-                event.accepted = true
-                break
-            case Qt.Key_F:
+            case "player.fullscreen":
                 window.toggleFullscreen()
                 event.accepted = true
                 break
-            case Qt.Key_Escape:
-                if (window.fullscreenActive) window.toggleFullscreen()
-                event.accepted = true
-                break
-            case Qt.Key_M:
+            case "player.mute":
                 playback_controls.toggleMute()
                 event.accepted = true
                 break
-            case Qt.Key_N:
-                if ((event.modifiers & Qt.ShiftModifier) && playback_controls.hasNext) {
+            case "player.danmaku":
+                PlayerController.toggleDanmaku()
+                event.accepted = true
+                break
+            case "player.subtitle":
+                PlayerController.toggleSubtitle()
+                event.accepted = true
+                break
+            case "player.next":
+                if (playback_controls.hasNext) {
                     PlayerController.playNext()
                     event.accepted = true
                 }
                 break
-            case Qt.Key_D:
-                PlayerController.toggleDanmaku()
-                event.accepted = true
-                break
-            case Qt.Key_S:
-                PlayerController.toggleSubtitle()
-                event.accepted = true
-                break
             }
             if (event.accepted) window.pokeControls()
+        }
+
+        Keys.onReleased: function (event) {
+            if (Hotkeys.match("player", event.key, event.modifiers) !== "player.seekForward")
+                return
+            if (event.isAutoRepeat) return
+            forwardKeyDown = false
+            speed_hold.stop()
+            if (speedHolding) {
+                endSpeedHold()  // 长按结束:恢复按住之前的倍速
+                window.showInfo(qsTr("已恢复原速"), 1200)
+            } else if (!playback_controls.menuOpen && !entitlement_dialog.visible) {
+                PlayerController.seek(PlayerController.position + Hotkeys.seekStepSeconds)
+            }
+            event.accepted = true
+            window.pokeControls()
+        }
+
+        // 长按判定:按住超过阈值(默认 350ms)才切倍速,避免与"短按快进"抢动作。
+        Timer {
+            id: speed_hold
+
+            interval: Hotkeys.holdDelayMs
+            onTriggered: {
+                if (!root.forwardKeyDown || root.speedHolding) return
+                root.speedBeforeHold = PlayerController.speed
+                root.speedHolding = true
+                PlayerController.setSpeed(Hotkeys.holdSpeed)
+                window.showInfo(qsTr("倍速播放 %1×").arg(Hotkeys.holdSpeed), 2000)
+            }
         }
 
         // 视频区(右侧留出播放列表面板)
@@ -273,7 +345,11 @@ FluWindow {
             }
         }
 
-        // 画面点击:切换播放/暂停 + 呼出控制栏;指针移动重置自动隐藏计时
+        // 画面点击:单击切换播放/暂停 + 呼出控制栏;双击切全屏 ⇄ 最大化;
+        // 指针移动重置自动隐藏计时。
+        // 单击动作延后一个很短的时间再执行,双击到来时撤销它 —— 否则双击会被
+        // Qt 先投递一次 onClicked,出现"双击顺带暂停"。慢速双击(间隔超过延时)
+        // 时单击已生效,onDoubleClicked 里再切一次播放状态把净效果抵消掉。
         MouseArea {
             id: video_click
 
@@ -281,9 +357,33 @@ FluWindow {
             anchors.fill: video_holder
             hoverEnabled: true
             cursorShape: window.cursorHidden ? Qt.BlankCursor : Qt.ArrowCursor
+            property bool singleClickFired: false
+            // 画面区滚轮调音量:与上下方向键共用同一档步长,可在设置里关闭。
+            // 只挂在画面区上,播放列表面板上的滚轮仍然滚动列表。
+            WheelHandler {
+                enabled: Hotkeys.wheelVolumeAdjust
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: function (event) {
+                    var delta = event.angleDelta ? event.angleDelta.y : 0
+                    if (delta === 0) return
+                    PlayerController.setVolumePercent(
+                                Hotkeys.volumeBy(PlayerController.volumePercent, delta > 0 ? 1 : -1))
+                    window.pokeControls()
+                    event.accepted = true
+                }
+            }
             onEntered: window.pokeControls()
             onClicked: {
-                PlayerController.togglePlayPause()
+                singleClickFired = false
+                click_timer.restart()
+            }
+            onDoubleClicked: {
+                click_timer.stop()
+                if (singleClickFired) {
+                    PlayerController.togglePlayPause()  // 撤销已生效的单击,净效果只剩全屏切换
+                    singleClickFired = false
+                }
+                window.toggleFullscreen()
                 root.forceActiveFocus()
                 window.pokeControls()
             }
@@ -295,7 +395,20 @@ FluWindow {
             }
         }
 
+        Timer {
+            id: click_timer
+
+            interval: 160
+            onTriggered: {
+                video_click.singleClickFired = true
+                PlayerController.togglePlayPause()
+                root.forceActiveFocus()
+                window.pokeControls()
+            }
+        }
+
         // 缓冲状态指示:解析中 / paused-for-cache 时中央显示;不拦截指针交互
+        // 窗口与骨架先于内核就绪出现,解析久时给出阶段文案,避免"点了没反应"。
         Item {
             z: 3
             anchors.fill: video_holder
@@ -317,10 +430,23 @@ FluWindow {
                 FluText {
                     anchors.horizontalCenter: parent.horizontalCenter
                     color: Qt.rgba(1, 1, 1, 1)
-                    text: PlayerController.loading ? qsTr("正在解析播放地址...")
-                                                   : qsTr("正在缓冲")
+                    text: PlayerController.loading
+                          ? (window.slowLoad ? qsTr("解析较慢，正在尝试兼容播放方式…")
+                                             : qsTr("正在解析播放地址..."))
+                          : qsTr("正在缓冲")
                 }
             }
+        }
+
+        // loading 持续 3.5s 后切换文案(用兼容模式的真实语义,不做假进度)。
+        // repeat=true 是为了不写 running,避免单次触发把绑定冲掉。
+        Timer {
+            id: slow_load
+
+            interval: 3500
+            repeat: true
+            running: PlayerController.loading
+            onTriggered: window.slowLoad = true
         }
 
         // 覆盖层只在顶部/底部命中，中央画面保持可点击。
@@ -614,7 +740,11 @@ FluWindow {
                 if (PlayerController.currentIndex < 0) return
                 root.forceActiveFocus()
                 window.clearAllInfo()
+                window.slowLoad = false
                 window.showInfo(qsTr("正在加载弹幕..."), 3000)
+            }
+            function onLoadingChanged() {
+                if (PlayerController.loading) window.slowLoad = false
             }
             function onDanmakuLoaded(entries) {
                 if (PlayerController.danmakuItem) {
@@ -635,6 +765,10 @@ FluWindow {
                 if (fallback) {
                     window.showInfo(qsTr("已回落到单流兼容模式播放"), 4000)
                 }
+            }
+            function onHardwareDecodeNotice(message) {
+                // 软解并非致命:仅提示,不打断播放
+                window.showWarning(message, 6000)
             }
             function onKernelRecoveredNotice(message) {
                 window.showWarning(message, 5000)

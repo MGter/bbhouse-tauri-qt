@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import FluentUI
+import bbhouse
 
 // 设置页(settings-ui):冻结大标题 + 可滚动卡片流;外观与行为区(主题即时
 // 生效/语言重启生效)，末尾提供重新登录入口。
@@ -12,6 +13,38 @@ FluPage {
     // 页面自行管理 24px 外边距，抵消 FluPage 默认的额外 5px padding。
     padding: 0
 
+    // ---- 改键录入 ----
+    // 点按某行的按键框进入录入态,随后按下的第一个键即为新键位;Esc 取消。
+    // 录入态由一个零尺寸但可见的 Item 抢焦点:隐藏的 Item 拿不到焦点,
+    // 零尺寸又不会挡住页面交互。点击别处会自然失去焦点并静默退出录入态。
+    property string capturingId: ""
+
+    function beginCapture(actionId) {
+        capturingId = actionId
+        key_capture.forceActiveFocus()
+    }
+    function cancelCapture() {
+        if (capturingId === "") return
+        capturingId = ""
+        info_bar.showInfo(qsTr("已取消改键"), 1800)
+    }
+    function completeCapture(key, modifiers) {
+        var actionId = capturingId
+        capturingId = ""
+        if (actionId === "") return
+        if (Hotkeys.assign(actionId, key, modifiers) === "unsupported") {
+            info_bar.showWarning(qsTr("这个按键不能用作快捷键，请换一个（支持字母、数字、方向键、F1–F12 与常用符号）。"), 5000)
+            return
+        }
+        var conflict = Hotkeys.conflictId(actionId)
+        if (conflict !== "") {
+            var other = Hotkeys.entry(conflict)
+            info_bar.showWarning(qsTr("已改为 %1，但与「%2」重复，实际只有目录中靠前的那个生效。")
+                                 .arg(Hotkeys.label(actionId)).arg(other ? other.label : ""), 6000)
+            return
+        }
+        info_bar.showSuccess(qsTr("已保存：%1").arg(Hotkeys.label(actionId)), 2500)
+    }
     function themeIndex(theme) {
         // 三档顺序:亮(0)/暗(1)/跟随系统(2)
         return theme === "dark" ? 1 : theme === "light" ? 0 : 2
@@ -42,6 +75,32 @@ FluPage {
         id: info_bar
 
         root: page
+    }
+
+    // 改键捕获:只在录入态抢焦点,吃下录入期间的第一个按键。
+    Item {
+        id: key_capture
+
+        width: 0
+        height: 0
+        anchors {
+            left: parent.left
+            top: parent.top
+        }
+        onActiveFocusChanged: {
+            // 点了别处就静默退出录入,避免"看着在录入其实按键没人收"
+            if (!activeFocus && page.capturingId !== "") page.capturingId = ""
+        }
+        Keys.onPressed: function (event) {
+            if (page.capturingId === "") return
+            event.accepted = true
+            if (event.key === Qt.Key_Escape) {
+                page.cancelCapture()
+                return
+            }
+            if (event.isAutoRepeat) return
+            page.completeCapture(event.key, event.modifiers)
+        }
     }
 
     FluContentDialog {
@@ -593,6 +652,211 @@ FluPage {
                         wrapMode: Text.Wrap
                         textColor: FluTheme.fontSecondaryColor
                         text: qsTr("设置立即生效并自动保存。默认弹幕状态与播放器开关同步，记住最后一次选择。")
+                    }
+                }
+            }
+
+            // ---- 快捷键卡(hotkeys):目录来自 Hotkeys 单例,点右侧按键框录入新键 ----
+            FluFrame {
+                id: hotkey_settings
+
+                width: parent.width
+                height: hotkey_fields.implicitHeight + 24
+                Column {
+                    id: hotkey_fields
+
+                    anchors { left: parent.left; right: parent.right; top: parent.top;
+                        leftMargin: 16; rightMargin: 16; topMargin: 12 }
+                    spacing: 10
+                    FluText { text: qsTr("快捷键"); font: FluTextStyle.BodyStrong }
+                    FluText {
+                        width: parent.width
+                        wrapMode: Text.Wrap
+                        textColor: FluTheme.fontSecondaryColor
+                        text: qsTr("点按右侧的按键框后，直接按下想用的键即可改键（Esc 取消）。改完立即生效并保存。")
+                    }
+
+                    Repeater {
+                        model: Hotkeys.scopes
+
+                        delegate: Column {
+                            id: scope_block
+
+                            required property var modelData
+
+                            width: hotkey_fields.width
+                            spacing: 6
+                            FluText {
+                                text: scope_block.modelData.title
+                                font: FluTextStyle.BodyStrong
+                                textColor: FluTheme.fontSecondaryColor
+                            }
+                            Repeater {
+                                model: Hotkeys.entriesOf(scope_block.modelData.key)
+
+                                delegate: RowLayout {
+                                    id: hotkey_row
+
+                                    required property var modelData
+
+                                    width: hotkey_fields.width
+                                    spacing: 8
+                                    FluText {
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        wrapMode: Text.Wrap
+                                        text: hotkey_row.modelData.label
+                                    }
+                                    FluText {
+                                        visible: Hotkeys.conflictId(hotkey_row.modelData.id) !== ""
+                                        text: qsTr("与其它快捷键重复")
+                                        textColor: FluTheme.primaryColor
+                                    }
+                                    FluButton {
+                                        Layout.preferredWidth: 156
+                                        text: page.capturingId === hotkey_row.modelData.id
+                                              ? qsTr("请按新键…")
+                                              : Hotkeys.label(hotkey_row.modelData.id)
+                                        Accessible.name: qsTr("修改「%1」的按键").arg(hotkey_row.modelData.label)
+                                        onClicked: page.beginCapture(hotkey_row.modelData.id)
+                                    }
+                                    FluButton {
+                                        Layout.preferredWidth: 64
+                                        text: qsTr("重置")
+                                        enabled: !Hotkeys.isDefault(hotkey_row.modelData.id)
+                                        Accessible.name: qsTr("恢复「%1」的默认按键").arg(hotkey_row.modelData.label)
+                                        onClicked: {
+                                            Hotkeys.reset(hotkey_row.modelData.id)
+                                            info_bar.showSuccess(qsTr("已恢复默认：%1")
+                                                                 .arg(Hotkeys.label(hotkey_row.modelData.id)), 2000)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    FluText {
+                        text: qsTr("按键行为")
+                        font: FluTextStyle.BodyStrong
+                        textColor: FluTheme.fontSecondaryColor
+                        topPadding: 6
+                    }
+                    GridLayout {
+                        width: hotkey_fields.width
+                        columns: hotkey_fields.width >= 540 ? 2 : 1
+                        columnSpacing: 20
+                        rowSpacing: 10
+
+                        FluText {
+                            text: qsTr("快进 / 快退步长")
+                            Layout.fillWidth: hotkey_fields.width < 540
+                            wrapMode: Text.Wrap
+                        }
+                        FluComboBox {
+                            objectName: "hotkeySeekStepCombo"
+                            Layout.fillWidth: true
+                            model: [qsTr("3 秒"), qsTr("5 秒"), qsTr("10 秒"), qsTr("15 秒"), qsTr("30 秒")]
+                            currentIndex: Math.max(0, [3, 5, 10, 15, 30].indexOf(Hotkeys.seekStepSeconds))
+                            Accessible.name: qsTr("快进 / 快退步长")
+                            onActivated: Hotkeys.setSeekStepSeconds([3, 5, 10, 15, 30][currentIndex])
+                        }
+
+                        FluText {
+                            text: qsTr("音量步长")
+                            Layout.fillWidth: hotkey_fields.width < 540
+                            wrapMode: Text.Wrap
+                        }
+                        FluComboBox {
+                            objectName: "hotkeyVolumeStepCombo"
+                            Layout.fillWidth: true
+                            model: [qsTr("2%"), qsTr("5%"), qsTr("10%"), qsTr("15%")]
+                            currentIndex: Math.max(0, [2, 5, 10, 15].indexOf(Hotkeys.volumeStepPercent))
+                            Accessible.name: qsTr("音量步长")
+                            onActivated: Hotkeys.setVolumeStepPercent([2, 5, 10, 15][currentIndex])
+                        }
+
+                        FluText {
+                            text: qsTr("长按倍速")
+                            Layout.fillWidth: hotkey_fields.width < 540
+                            wrapMode: Text.Wrap
+                        }
+                        FluComboBox {
+                            objectName: "hotkeyHoldSpeedCombo"
+                            Layout.fillWidth: true
+                            model: ["1.25×", "1.5×", "2.0×", "3.0×"]
+                            currentIndex: Math.max(0, [1.25, 1.5, 2, 3].indexOf(Hotkeys.holdSpeed))
+                            Accessible.name: qsTr("长按倍速")
+                            onActivated: Hotkeys.setHoldSpeed([1.25, 1.5, 2, 3][currentIndex])
+                        }
+
+                        FluText {
+                            text: qsTr("长按判定时间")
+                            Layout.fillWidth: hotkey_fields.width < 540
+                            wrapMode: Text.Wrap
+                        }
+                        FluComboBox {
+                            objectName: "hotkeyHoldDelayCombo"
+                            Layout.fillWidth: true
+                            model: [qsTr("0.2 秒"), qsTr("0.35 秒"), qsTr("0.5 秒"), qsTr("0.8 秒")]
+                            currentIndex: Math.max(0, [200, 350, 500, 800].indexOf(Hotkeys.holdDelayMs))
+                            Accessible.name: qsTr("长按判定时间")
+                            onActivated: Hotkeys.setHoldDelayMs([200, 350, 500, 800][currentIndex])
+                        }
+
+                        FluText {
+                            text: qsTr("滚轮调音量")
+                            Layout.fillWidth: hotkey_fields.width < 540
+                            wrapMode: Text.Wrap
+                        }
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: 32
+                            FluToggleSwitch {
+                                objectName: "hotkeyWheelVolumeSwitch"
+                                anchors.verticalCenter: parent.verticalCenter
+                                checked: Hotkeys.wheelVolumeAdjust
+                                Accessible.role: Accessible.CheckBox
+                                Accessible.name: qsTr("滚轮调音量")
+                                Accessible.checked: checked
+                                clickListener: function() {
+                                    Hotkeys.setWheelVolumeAdjust(!Hotkeys.wheelVolumeAdjust)
+                                }
+                            }
+                        }
+                    }
+                    FluText {
+                        width: parent.width
+                        wrapMode: Text.Wrap
+                        textColor: FluTheme.fontSecondaryColor
+                        text: qsTr("播放画面区滚轮上滚加大音量、下滚减小音量，直播窗口同样适用。")
+                    }
+                    FluText {
+                        width: parent.width
+                        wrapMode: Text.Wrap
+                        textColor: FluTheme.fontSecondaryColor
+                        text: qsTr("列表页快捷键只在带分页的页面生效：流行、番剧、特别关注、稍后再看、本地历史、下载管理。")
+                    }
+                    FluText {
+                        width: parent.width
+                        wrapMode: Text.Wrap
+                        textColor: FluTheme.fontSecondaryColor
+                        font: FluTextStyle.Caption
+                        text: qsTr("Esc 固定用于逐级退出，不能改键。")
+                    }
+                    Flow {
+                        width: parent.width
+                        spacing: 12
+                        FluButton {
+                            objectName: "hotkeyResetAllButton"
+                            text: qsTr("全部恢复默认")
+                            enabled: Hotkeys.customized
+                            onClicked: {
+                                page.cancelCapture()
+                                Hotkeys.resetAll()
+                                info_bar.showSuccess(qsTr("已恢复全部默认快捷键"), 2500)
+                            }
+                        }
                     }
                 }
             }

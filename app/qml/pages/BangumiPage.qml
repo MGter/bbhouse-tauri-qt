@@ -94,6 +94,24 @@ FluPage {
         scroll_view.contentY = 0  // 切档回顶(规约)
     }
 
+    // ---- 列表页快捷键入口(由 MainWindow 分发):J/K 翻页、U/D 上下翻一屏 ----
+    // 与底部 FluPagination 同口径:按服务端 total 算总页数,越界不动。
+    function pageStep(delta) {
+        if (BangumiController.busy) return
+        var current = Math.max(1, BangumiController.currentPage)
+        var total = Math.max(1, Math.ceil(BangumiController.currentTotal / pageSize))
+        var target = Math.max(1, Math.min(current + delta, total))
+        if (target === current) return
+        scroll_view.contentY = 0
+        BangumiController.loadPage(target)
+    }
+    function scrollStep(delta) {
+        var span = Math.max(40, scroll_view.height * 0.9)
+        scroll_view.contentY = Math.max(0,
+            Math.min(scroll_view.contentY + delta * span,
+                     Math.max(0, scroll_view.contentHeight - scroll_view.height)))
+    }
+
     function lastEpStartIndex(detail) {
         // 起播分集定位:云端最近观看分集(last_ep_id),无观看记录第 1 集
         if (!detail || !(detail.lastEpId > 0)) return 0

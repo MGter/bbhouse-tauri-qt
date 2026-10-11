@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import FluentUI
+import bbhouse
 import "controls"
 
 FluWindow {
@@ -17,6 +18,8 @@ FluWindow {
     property int previousBarHeight: 48
     property bool controlsShown: true
     property bool cursorHidden: false
+    // 静音前的音量(M 键静音/取消静音用),与视频播放器同口径
+    property int lastAudibleVolume: 100
     readonly property bool controlsLocked: top_hover.hovered || bottom_hover.hovered
         || top_bar.activeFocus || bottom_bar.activeFocus || volume_slider.pressed
         || quality_menu.visible || LivePlayerController.paused || LivePlayerController.loading
@@ -98,19 +101,48 @@ FluWindow {
         anchors.fill: parent
         focus: true
         // 未被菜单/滑块/按钮消费的按键才作为播放快捷键，与标准窗口一致。
+        // 键位来自 Hotkeys 单例(设置页可改);Esc 固定为逐级退出。
+        // 直播没有进度概念,所以只取音量/播放暂停/全屏三项。
         Keys.onPressed: function(event) {
             if (quality_menu.visible) return
-            switch (event.key) {
-            case Qt.Key_F:
+            if (event.key === Qt.Key_Escape) {
+                // 逐级退出(与视频播放器一致):全屏退全屏 → 最大化还原成窗口 →
+                // 已是窗口则关掉直播播放器回到直播选择页
+                if (window.fullscreenActive) window.toggleFullscreen()
+                else if (window.visibility === Window.Maximized
+                         || window.visibility === Window.WindowedMaximized)
+                    window.visibility = Window.Windowed
+                else window.close()
+                event.accepted = true
+                window.pokeControls()
+                return
+            }
+            switch (Hotkeys.match("player", event.key, event.modifiers)) {
+            case "player.fullscreen":
                 window.toggleFullscreen()
                 event.accepted = true
                 break
-            case Qt.Key_Escape:
-                if (window.fullscreenActive) window.toggleFullscreen()
+            case "player.playPause":
+                LivePlayerController.togglePlayPause()
                 event.accepted = true
                 break
-            case Qt.Key_Space:
-                LivePlayerController.togglePlayPause()
+            case "player.volumeUp":
+                LivePlayerController.setVolumePercent(
+                            Hotkeys.volumeBy(LivePlayerController.volumePercent, 1))
+                event.accepted = true
+                break
+            case "player.volumeDown":
+                LivePlayerController.setVolumePercent(
+                            Hotkeys.volumeBy(LivePlayerController.volumePercent, -1))
+                event.accepted = true
+                break
+            case "player.mute":
+                if (LivePlayerController.volumePercent > 0) {
+                    window.lastAudibleVolume = LivePlayerController.volumePercent
+                    LivePlayerController.setVolumePercent(0)
+                } else {
+                    LivePlayerController.setVolumePercent(Math.max(1, window.lastAudibleVolume))
+                }
                 event.accepted = true
                 break
             }
@@ -137,6 +169,19 @@ FluWindow {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: window.cursorHidden ? Qt.BlankCursor : Qt.ArrowCursor
+            // 画面区滚轮调音量(与上下方向键同一步长,可在设置里关闭)
+            WheelHandler {
+                enabled: Hotkeys.wheelVolumeAdjust
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: function(event) {
+                    var delta = event.angleDelta ? event.angleDelta.y : 0
+                    if (delta === 0) return
+                    LivePlayerController.setVolumePercent(
+                                Hotkeys.volumeBy(LivePlayerController.volumePercent, delta > 0 ? 1 : -1))
+                    window.pokeControls()
+                    event.accepted = true
+                }
+            }
             onClicked: window.finishAction()
             onDoubleClicked: window.toggleFullscreen()
             onPositionChanged: window.pokeControls()

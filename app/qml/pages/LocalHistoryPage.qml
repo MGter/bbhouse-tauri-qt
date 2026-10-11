@@ -29,6 +29,22 @@ FluPage {
     // 分页口径的总条数(未筛选;搜索不改变分页)
     property int totalItemCount: 0
 
+    // ---- 列表页快捷键入口(由 MainWindow 分发):J/K 翻页、U/D 上下翻一屏 ----
+    // 与底部 FluPagination 同口径;翻出去就不动,避免把越界页码发给控制器。
+    function pageStep(delta) {
+        var totalPages = Math.max(1, Math.ceil(totalItemCount / pageSize))
+        var target = Math.max(1, Math.min(pageIndex + delta, totalPages))
+        if (target === pageIndex) return
+        grid.contentY = 0
+        HistoryController.loadPage(target)
+    }
+    function scrollStep(delta) {
+        var span = Math.max(40, grid.height * 0.9)
+        grid.contentY = Math.max(grid.originY,
+            Math.min(grid.contentY + delta * span,
+                     grid.originY + Math.max(0, grid.contentHeight - grid.height)))
+    }
+
     // 仅当前分页:标题或 UP 主不分大小写子串匹配,任一命中即显示
     readonly property string queryLower: searchQuery.trim().toLowerCase()
     onSearchQueryChanged: HistoryController.searchText = searchQuery
@@ -228,7 +244,8 @@ FluPage {
 
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: content_area.gridCardWidth
-                    height: implicitHeight
+                    // 统一高度:与当前最高卡片等高,底边对齐(implicitHeight 仍供测高)
+                    height: grid.cellHeight - 16
                     cardItem: cell.cardData
                     showRecordedBadge: true
                     onAuthorClicked: function (author) {

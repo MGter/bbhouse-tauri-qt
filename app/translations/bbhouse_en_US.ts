@@ -1077,6 +1077,150 @@
         <source>重新登录</source>
         <translation>Sign in again</translation>
     </message>
+    <message>
+        <source>快捷键</source>
+        <translation>Keyboard shortcuts</translation>
+    </message>
+    <message>
+        <source>点按右侧的按键框后，直接按下想用的键即可改键（Esc 取消）。改完立即生效并保存。</source>
+        <translation>Click a key box on the right, then press the key you want (Esc cancels). Changes apply and save immediately.</translation>
+    </message>
+    <message>
+        <source>与其它快捷键重复</source>
+        <translation>Duplicates another shortcut</translation>
+    </message>
+    <message>
+        <source>请按新键…</source>
+        <translation>Press a key…</translation>
+    </message>
+    <message>
+        <source>修改「%1」的按键</source>
+        <translation>Change the key for "%1"</translation>
+    </message>
+    <message>
+        <source>重置</source>
+        <translation>Reset</translation>
+    </message>
+    <message>
+        <source>恢复「%1」的默认按键</source>
+        <translation>Restore the default key for "%1"</translation>
+    </message>
+    <message>
+        <source>已恢复默认：%1</source>
+        <translation>Restored default: %1</translation>
+    </message>
+    <message>
+        <source>按键行为</source>
+        <translation>Key behaviour</translation>
+    </message>
+    <message>
+        <source>快进 / 快退步长</source>
+        <translation>Seek step</translation>
+    </message>
+    <message>
+        <source>3 秒</source>
+        <translation>3 s</translation>
+    </message>
+    <message>
+        <source>5 秒</source>
+        <translation>5 s</translation>
+    </message>
+    <message>
+        <source>10 秒</source>
+        <translation>10 s</translation>
+    </message>
+    <message>
+        <source>15 秒</source>
+        <translation>15 s</translation>
+    </message>
+    <message>
+        <source>30 秒</source>
+        <translation>30 s</translation>
+    </message>
+    <message>
+        <source>音量步长</source>
+        <translation>Volume step</translation>
+    </message>
+    <message>
+        <source>2%</source>
+        <translation>2%</translation>
+    </message>
+    <message>
+        <source>5%</source>
+        <translation>5%</translation>
+    </message>
+    <message>
+        <source>10%</source>
+        <translation>10%</translation>
+    </message>
+    <message>
+        <source>15%</source>
+        <translation>15%</translation>
+    </message>
+    <message>
+        <source>长按倍速</source>
+        <translation>Hold speed</translation>
+    </message>
+    <message>
+        <source>长按判定时间</source>
+        <translation>Hold delay</translation>
+    </message>
+    <message>
+        <source>0.2 秒</source>
+        <translation>0.2 s</translation>
+    </message>
+    <message>
+        <source>0.35 秒</source>
+        <translation>0.35 s</translation>
+    </message>
+    <message>
+        <source>0.5 秒</source>
+        <translation>0.5 s</translation>
+    </message>
+    <message>
+        <source>0.8 秒</source>
+        <translation>0.8 s</translation>
+    </message>
+    <message>
+        <source>滚轮调音量</source>
+        <translation>Wheel adjusts volume</translation>
+    </message>
+    <message>
+        <source>播放画面区滚轮上滚加大音量、下滚减小音量，直播窗口同样适用。</source>
+        <translation>Scroll up on the video to raise the volume and down to lower it. Applies to the live player too.</translation>
+    </message>
+    <message>
+        <source>列表页快捷键只在带分页的页面生效：流行、番剧、特别关注、稍后再看、本地历史、下载管理。</source>
+        <translation>List shortcuts only work on paginated pages: Popular, Bangumi, Special Following, Watch Later, Local History, Downloads.</translation>
+    </message>
+    <message>
+        <source>Esc 固定用于逐级退出，不能改键。</source>
+        <translation>Esc is reserved for step-by-step exit and cannot be reassigned.</translation>
+    </message>
+    <message>
+        <source>全部恢复默认</source>
+        <translation>Restore all defaults</translation>
+    </message>
+    <message>
+        <source>已恢复全部默认快捷键</source>
+        <translation>All shortcuts restored to defaults</translation>
+    </message>
+    <message>
+        <source>已取消改键</source>
+        <translation>Key change cancelled</translation>
+    </message>
+    <message>
+        <source>这个按键不能用作快捷键，请换一个（支持字母、数字、方向键、F1–F12 与常用符号）。</source>
+        <translation>That key cannot be used as a shortcut. Try a letter, digit, arrow key, F1–F12, or a common symbol.</translation>
+    </message>
+    <message>
+        <source>已改为 %1，但与「%2」重复，实际只有目录中靠前的那个生效。</source>
+        <translation>Changed to %1, but it duplicates "%2"; only the earlier entry in the list takes effect.</translation>
+    </message>
+    <message>
+        <source>已保存：%1</source>
+        <translation>Saved: %1</translation>
+    </message>
 </context>
 <context>
     <name>PlayerWindow</name>
@@ -1187,6 +1331,18 @@
     <message>
         <source>下载</source>
         <translation>Download</translation>
+    </message>
+    <message>
+        <source>已恢复原速</source>
+        <translation>Playback speed restored</translation>
+    </message>
+    <message>
+        <source>倍速播放 %1×</source>
+        <translation>Playing at %1x</translation>
+    </message>
+    <message>
+        <source>解析较慢，正在尝试兼容播放方式…</source>
+        <translation>Still resolving the stream; trying a compatible playback mode…</translation>
     </message>
 </context>
 <context>
@@ -3054,6 +3210,137 @@
     <message>
         <source>Cookie 是账号登录凭据，请勿分享或上传。若提示无效或过期，请在网页重新登录后再次导出。</source>
         <translation>Cookies are account credentials. Do not share or upload them. If they are invalid or expired, sign in on the website again and export fresh cookies.</translation>
+    </message>
+</context>
+<context>
+    <name>Hotkeys</name>
+    <message>
+        <source>播放器</source>
+        <translation>Player</translation>
+    </message>
+    <message>
+        <source>列表页（仅有分页的页面）</source>
+        <translation>Lists (paginated pages only)</translation>
+    </message>
+    <message>
+        <source>音量 +</source>
+        <translation>Volume up</translation>
+    </message>
+    <message>
+        <source>音量 −</source>
+        <translation>Volume down</translation>
+    </message>
+    <message>
+        <source>快退</source>
+        <translation>Seek back</translation>
+    </message>
+    <message>
+        <source>快进 / 长按倍速</source>
+        <translation>Seek forward / hold for speed</translation>
+    </message>
+    <message>
+        <source>播放 / 暂停</source>
+        <translation>Play / Pause</translation>
+    </message>
+    <message>
+        <source>全屏切换</source>
+        <translation>Toggle fullscreen</translation>
+    </message>
+    <message>
+        <source>静音切换</source>
+        <translation>Toggle mute</translation>
+    </message>
+    <message>
+        <source>弹幕开关</source>
+        <translation>Toggle danmaku</translation>
+    </message>
+    <message>
+        <source>字幕开关</source>
+        <translation>Toggle subtitles</translation>
+    </message>
+    <message>
+        <source>播放下一集</source>
+        <translation>Play next</translation>
+    </message>
+    <message>
+        <source>聚焦搜索框</source>
+        <translation>Focus search box</translation>
+    </message>
+    <message>
+        <source>上一页</source>
+        <translation>Previous page</translation>
+    </message>
+    <message>
+        <source>下一页</source>
+        <translation>Next page</translation>
+    </message>
+    <message>
+        <source>列表上翻一屏</source>
+        <translation>Scroll list up one screen</translation>
+    </message>
+    <message>
+        <source>列表下翻一屏</source>
+        <translation>Scroll list down one screen</translation>
+    </message>
+    <message>
+        <source>音量增大一档；滚轮上滚等效</source>
+        <translation>Raise volume one step; scrolling up does the same</translation>
+    </message>
+    <message>
+        <source>音量减小一档；滚轮下滚等效</source>
+        <translation>Lower volume one step; scrolling down does the same</translation>
+    </message>
+    <message>
+        <source>向后跳一段（步长见下方设置）</source>
+        <translation>Jump back by the step set below</translation>
+    </message>
+    <message>
+        <source>短按快进一段；按住不放切换到倍速播放，松开恢复原速</source>
+        <translation>Tap to seek forward; hold to play faster until released</translation>
+    </message>
+    <message>
+        <source>切换播放与暂停</source>
+        <translation>Toggle play and pause</translation>
+    </message>
+    <message>
+        <source>在全屏与窗口之间切换</source>
+        <translation>Switch between fullscreen and windowed</translation>
+    </message>
+    <message>
+        <source>静音 / 取消静音</source>
+        <translation>Mute or unmute</translation>
+    </message>
+    <message>
+        <source>显示或隐藏弹幕</source>
+        <translation>Show or hide danmaku</translation>
+    </message>
+    <message>
+        <source>切换字幕轨</source>
+        <translation>Switch subtitle track</translation>
+    </message>
+    <message>
+        <source>跳到播放列表的下一个</source>
+        <translation>Jump to the next playlist item</translation>
+    </message>
+    <message>
+        <source>光标直接落到当前页面标题栏的搜索框</source>
+        <translation>Put the caret straight into the page search box</translation>
+    </message>
+    <message>
+        <source>上一页；已在首页时不动</source>
+        <translation>Previous page; does nothing on the first page</translation>
+    </message>
+    <message>
+        <source>下一页；已在末页时不动</source>
+        <translation>Next page; does nothing on the last page</translation>
+    </message>
+    <message>
+        <source>当前列表向上滚动一屏</source>
+        <translation>Scroll the current list up by one screen</translation>
+    </message>
+    <message>
+        <source>当前列表向下滚动一屏</source>
+        <translation>Scroll the current list down by one screen</translation>
     </message>
 </context>
 </TS>

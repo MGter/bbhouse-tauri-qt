@@ -134,6 +134,25 @@ FluPage {
         Math.max(0, Math.ceil(Math.max(0, arcMasonryWidth -
                             (arcColumnCount * arcStride - 16)) / 2))
 
+    // ---- 列表页快捷键入口(由 MainWindow 分发):J/K 翻页、U/D 上下翻一屏 ----
+    // 与底部 FluPagination 同口径:三档各自的分页游标互不干扰,越界不动。
+    function pageStep(delta) {
+        if (tabBusy) return
+        var total = Math.max(1, Math.ceil(pageInfoTotal / pageSize))
+        var target = Math.max(1, Math.min(pageInfoPage + delta, total))
+        if (target === pageInfoPage) return
+        scroll_view.contentY = 0
+        if (currentTab === 0) page.controller.loadArcPage(target)
+        else if (currentTab === 1) page.controller.loadSeasonsPage(target)
+        else page.controller.setArticlePage(target)  // 本地切片
+    }
+    function scrollStep(delta) {
+        var span = Math.max(40, scroll_view.height * 0.9)
+        scroll_view.contentY = Math.max(0,
+            Math.min(scroll_view.contentY + delta * span,
+                     Math.max(0, scroll_view.contentHeight - scroll_view.height)))
+    }
+
     function resetView() {
         searchQuery = ""
         page.controller.searchText = ""

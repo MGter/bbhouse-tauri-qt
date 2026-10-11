@@ -57,6 +57,18 @@ FluPage {
         pageIndex = Math.max(1, Math.min(index, totalPages))
         scroll_view.contentY = 0
     }
+
+    // ---- 列表页快捷键入口(由 MainWindow 分发):J/K 翻页、U/D 上下翻一屏 ----
+    function pageStep(delta) {
+        selectPage(pageIndex + delta)
+    }
+    function scrollStep(delta) {
+        pendingScrollOffset = -1
+        var span = Math.max(40, scroll_view.height * 0.9)
+        scroll_view.contentY = Math.max(0,
+            Math.min(scroll_view.contentY + delta * span,
+                     Math.max(0, scroll_view.contentHeight - scroll_view.height)))
+    }
     function playLocal(entry) {
         // 起播时再次验证文件，不依赖上一次刷新得到的存在状态。
         var local = DownloadController.localEntry(String(entry.id))

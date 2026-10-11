@@ -97,6 +97,105 @@ FluWindow {
         enabled: window.spaceVisible
         onActivated: window.returnFromSpace()
     }
+    // R 键刷新:按当前页分派到对应控制器的刷新入口,动作与各页标题栏的刷新按钮一致。
+    // 焦点落在文本输入控件(搜索框等)上时禁用,否则在搜索框里打不出字母 r。
+    readonly property bool textEditing: {
+        var item = activeFocusItem
+        while (item) {
+            if (item.acceptableInput !== undefined || item.echoMode !== undefined)
+                return true
+            item = item.parent
+        }
+        return false
+    }
+    function refreshCurrentPage() {
+        if (window.spaceVisible) return
+        switch (window.currentPage) {
+        case "dynamics": DynamicsController.refresh(); break
+        case "popular": PopularController.refresh(); break
+        case "special":
+            // 与 SpecialFollowPage.refreshCurrentTab() 同口径:按当前档位刷新
+            if (SpecialFollowController.currentTab === 0) SpecialFollowController.refreshArc()
+            else if (SpecialFollowController.currentTab === 1) SpecialFollowController.refreshSeasons()
+            else SpecialFollowController.refreshArticles()
+            break
+        case "watchlater": WatchlaterController.refresh(); break
+        case "bangumi": BangumiController.refresh(); break
+        case "live": LiveController.refresh(); break
+        case "online": OnlineHistoryController.refresh(); break
+        case "local":
+            HistoryController.loadPage(Math.max(1, HistoryController.lastRequestedPage))
+            break
+        case "downloads": DownloadController.refreshLibrary(); break
+        default: break
+        }
+    }
+    Shortcut {
+        sequence: "R"
+        enabled: !window.textEditing && window.currentPage !== "" &&
+                 window.currentPage !== "settings" && window.currentPage !== "about"
+        onActivated: window.refreshCurrentPage()
+    }
+
+    // ---- 列表页快捷键:键位来自 Hotkeys 单例(设置页可改) ----
+    // 只在"有分页的页面"生效(J/K 翻页、U/D 上下翻一屏),并且焦点落在文本输入
+    // 控件上时整体禁用 —— 否则在搜索框里打不出 j/k/u/d。
+    readonly property var paginatedPages: ["special", "watchlater", "bangumi",
+                                           "popular", "local", "downloads"]
+    readonly property var paginatedPage: {
+        if (window.paginatedPages.indexOf(window.currentPage) === -1) return null
+        var loader = page_host.children[window.pageKeys.indexOf(window.currentPage)]
+        return loader ? loader.item : null
+    }
+    readonly property bool listKeysEnabled: !window.textEditing && !window.spaceVisible
+                                            && window.paginatedPage !== null
+
+    // 分页页面各自实现 pageStep(±1) 与 scrollStep(±1 屏):各页分页语义不同
+    // (榜单整屏换页 / 客户端切片 / 服务端分页),由页面自己决定边界。
+    function listPageStep(delta) {
+        var target = window.paginatedPage
+        if (!target || typeof target.pageStep !== "function") return
+        target.pageStep(delta)
+    }
+    function listScrollStep(delta) {
+        var target = window.paginatedPage
+        if (!target || typeof target.scrollStep !== "function") return
+        target.scrollStep(delta)
+    }
+
+    // Ctrl+F:光标直接落到当前页面标题栏的搜索框(而不是先点一下)。
+    function focusSearchBox() {
+        if (!window.searchVisible) return
+        var editor = window.useSystemAppBar ? search_box_mac : search_box
+        editor.forceActiveFocus()
+        editor.selectAll()
+    }
+
+    Shortcut {
+        sequence: Hotkeys.sequence("list.focusSearch")
+        enabled: window.searchVisible && !window.textEditing
+        onActivated: window.focusSearchBox()
+    }
+    Shortcut {
+        sequence: Hotkeys.sequence("list.scrollUp")
+        enabled: window.listKeysEnabled
+        onActivated: window.listScrollStep(-1)
+    }
+    Shortcut {
+        sequence: Hotkeys.sequence("list.scrollDown")
+        enabled: window.listKeysEnabled
+        onActivated: window.listScrollStep(1)
+    }
+    Shortcut {
+        sequence: Hotkeys.sequence("list.prevPage")
+        enabled: window.listKeysEnabled
+        onActivated: window.listPageStep(-1)
+    }
+    Shortcut {
+        sequence: Hotkeys.sequence("list.nextPage")
+        enabled: window.listKeysEnabled
+        onActivated: window.listPageStep(1)
+    }
 
     Component.onCompleted: {
         // 主题即时生效:FluThemeType.DarkMode = System 0 / Light 1 / Dark 2(Def.h)

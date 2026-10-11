@@ -58,6 +58,18 @@ FluPage {
         scroll_view.contentY = 0
     }
 
+    // ---- 列表页快捷键入口(由 MainWindow 分发):J/K 翻页、U/D 上下翻一屏 ----
+    function pageStep(delta) {
+        selectPage(pageIndex + delta)
+    }
+    function scrollStep(delta) {
+        scroll_anim.stop()
+        var span = Math.max(40, scroll_view.height * 0.9)
+        scroll_view.contentY = Math.max(0,
+            Math.min(scroll_view.contentY + delta * span,
+                     Math.max(0, scroll_view.contentHeight - scroll_view.height)))
+    }
+
     // 搜索覆盖全量池并回首页;刷新后仅在原页码越界时回到新的末页。
     onQueryLowerChanged: if (stateReady) selectPage(1)
     onTotalPagesChanged: {
@@ -120,42 +132,39 @@ FluPage {
                 verticalCenter: parent.verticalCenter
             }
         }
-    }
+        // 工具栏规格(与其他页面统一):加载环 + 仅图标刷新按钮,锚在标题带右端垂直居中。
+        // 原先单独占标题带下方一行,现并入标题带。
+        Row {
+            id: toolbar
 
-    // 工具栏:仅图标刷新按钮(右缘与瀑布流内容区右缘对齐)+ 刷新期间加载指示
-    Row {
-        id: toolbar
-
-        spacing: 10
-        anchors {
-            top: title_band.bottom
-            topMargin: 4
-            right: parent.right
-            rightMargin: page.gridRightInset
-        }
-        // 刷新进行中的加载指示器(既有卡片保持可见,不闪空白)
-        FluProgressRing {
-            id: refresh_ring
-
-            indeterminate: true
-            strokeWidth: 3
-            width: 22
-            height: 22
-            visible: WatchlaterController.busy
+            spacing: 10
+            anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-        }
-        FluIconButton {
-            id: btn_refresh
 
-            width: 34
-            height: 34
-            iconSource: FluentIcons.Refresh
-            iconSize: 14
-            enabled: !WatchlaterController.busy
-            anchors.verticalCenter: parent.verticalCenter
-            onClicked: {
-                page.lastError = ""
-                WatchlaterController.refresh()
+            // 刷新进行中的加载指示器(既有卡片保持可见,不闪空白)
+            FluProgressRing {
+                id: refresh_ring
+
+                indeterminate: true
+                strokeWidth: 3
+                width: 22
+                height: 22
+                visible: WatchlaterController.busy
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            FluIconButton {
+                id: btn_refresh
+
+                width: 34
+                height: 34
+                iconSource: FluentIcons.Refresh
+                iconSize: 14
+                enabled: !WatchlaterController.busy
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: {
+                    page.lastError = ""
+                    WatchlaterController.refresh()
+                }
             }
         }
     }
@@ -169,7 +178,7 @@ FluPage {
         contentWidth: width
         contentHeight: masonry.y + masonry.height + 12
         anchors {
-            top: toolbar.bottom
+            top: title_band.bottom
             topMargin: 8
             left: parent.left
             right: parent.right
