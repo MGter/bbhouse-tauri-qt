@@ -33,6 +33,9 @@ constexpr int kPollIntervalMs = 100;        // 位置轮询(弹幕时基 100ms �
 constexpr qint64 kSaveIntervalMs = 5000;    // 位置落库节流:每 5s
 constexpr double kSaveMinDelta = 1.0;       // 且位移 >1s
 constexpr int kCandidateTimeoutMs = 8000;   // 单候选 8s 未 file-loaded 换下一候选
+// "装载成功但建不出轨道"的候选连续被拒达到该数即判定为内核系统性拒绝,
+// 直接回落 durl 单流(见 tryNextVideoCandidate)。
+constexpr int kMaxConsecutiveKernelRejects = 3;
 
 }  // namespace
 
@@ -460,6 +463,7 @@ void PlayerController::startPlayback(const QVariantMap &entry, double explicitSt
     waitingFileLoaded_ = false;
     candidateWatchdog_.stop();
     pendingVideoUrls_.clear();
+    consecutiveKernelRejects_ = 0;  // 新一次起播/换源:候选拒绝计数重置
     qualityResolving_ = qualitySwitch && kernelAvailable() && !playbackFailed_;
     playbackFailed_ = false;
     ResolveRequest request;
@@ -899,6 +903,7 @@ bool PlayerController::ensureKernel() {
         client_ = nullptr;
     }
     kernelNoticeShown_ = false;
+    hwdecNoticeShown_ = false;
     client_ = MpvClient::create(this);
     kernelAlive_ = client_ != nullptr;
     emit kernelAvailableChanged();
@@ -907,6 +912,22 @@ bool PlayerController::ensureKernel() {
     // 跨内核恢复:音量/倍速保持(内核崩溃重建与关窗重建共用此路径)
     client_->setPropertyString("volume", QString::number(volume_));
     client_->setPropertyString("speed", QString::number(speed_));
+    // 硬解兜底探测:内核已按"直出 → copy-back → 软解"的顺序挑过一次,这里只在
+    // 最终仍落到软解时如实告知用户(4K/高帧率会明显卡顿),不再静默降级。
+    connect(client_, &MpvClient::hwdecChanged, this, [this](const QString &method) {
+        if (!method.isEmpty() && method != QLatin1String("no")) return;
+        // hwdec-current 翻转常早于首帧解出,延后一拍再判定"是不是真的在软解视频"。
+        QTimer::singleShot(1500, this, [this] {
+            if (hwdecNoticeShown_ || !client_ || !kernelAlive_) return;
+            if (MpvClient::hwdecRequest() == QLatin1String("no")) return;  // 用户明确要求软解
+            const QString current = client_->getPropertyString(QStringLiteral("hwdec-current"));
+            if (!current.isEmpty() && current != QLatin1String("no")) return;
+            if (client_->getPropertyString(QStringLiteral("video-format")).isEmpty()) return;
+            hwdecNoticeShown_ = true;
+            emit hardwareDecodeNotice(
+                    Loc::get("未能启用硬件解码,当前使用 CPU 软解(高分辨率或高帧率可能卡顿)"));
+        });
+    });
     connect(client_, &MpvClient::playbackRestarted, this, [this](double position) {
         if (danmakuItem_ && !playbackFailed_ && !currentKey_.isEmpty())
             danmakuItem_->completeTransition(position, speed_, paused_, !paused_ && !buffering_);
@@ -916,6 +937,7 @@ bool PlayerController::ensureKernel() {
         playbackFailed_ = false;
         mediaReady_ = true;
         waitingFileLoaded_ = false;
+        consecutiveKernelRejects_ = 0;  // 装载成功:候选拒绝计数归零
         candidateWatchdog_.stop();
         if (loading_) {
             loading_ = false;
@@ -934,6 +956,9 @@ bool PlayerController::ensureKernel() {
         // 当成候选失败处理，交给上层回落到 durl 单流（容器流自带音视频）。
         if (!waitingFileLoaded_ || activeRequest_.generation != generation_) return;
         waitingFileLoaded_ = false;
+        // 只统计"内核建不出轨道"这一类拒绝(网络/解码错误的候选走 playbackError,
+        // 不计入):这一类是内核与流格式的系统性不兼容,不是单个候选的问题。
+        ++consecutiveKernelRejects_;
         candidateWatchdog_.stop();
         const int generation = generation_;
         const int candidate = candidateIndex_;
@@ -1097,6 +1122,17 @@ void PlayerController::tryNextVideoCandidate() {
         return;
     }
     waitingRenderReady_ = false;
+    // 连续多个候选被内核"装载成功但零轨道"拒绝 → 判定为系统性不兼容,直接回落
+    // durl 单流;否则要把全部候选(常见十几个)逐个 loadfile 走一遍,每个都是一次
+    // 完整往返,起播会白等数秒。首个候选正常时这段逻辑不会触发。
+    if (!fallback_ && !localMedia() && candidateIndex_ < pendingVideoUrls_.size() &&
+        consecutiveKernelRejects_ >= kMaxConsecutiveKernelRejects) {
+        waitingFileLoaded_ = false;
+        candidateWatchdog_.stop();
+        candidateIndex_ = pendingVideoUrls_.size();
+        startDurlFallback();
+        return;
+    }
     if (candidateIndex_ >= pendingVideoUrls_.size()) {
         if (fallback_ || localMedia()) {
             // 单流全部候选也未能装载:停止并报错(不无限重试)
@@ -1216,6 +1252,7 @@ void PlayerController::handleDurlResolved(const ResolveRequest &request,
     pendingAudioUrls_.clear();
     pendingStart_ = request.explicitStart;
     candidateIndex_ = 0;
+    consecutiveKernelRejects_ = 0;  // 回到单流候选链:拒绝计数重新计
     currentCid_ = request.cid;
     waitingFileLoaded_ = false;
     tryNextVideoCandidate();

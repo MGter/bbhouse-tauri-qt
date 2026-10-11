@@ -42,11 +42,17 @@ FluPage {
     }
 
     ColumnLayout {
+        // 与其他页面统一:标题带从窗口顶开始(不再额外缩进 24),底部留 12,
+        // 行间距与流行页一致取 8。
         anchors.fill: parent
-        anchors.margins: 24
-        spacing: 12
+        anchors.leftMargin: 24
+        anchors.rightMargin: 24
+        anchors.bottomMargin: 12
+        spacing: 8
+        // 标题行:高 56,标题左对齐、加载环与刷新按钮右端垂直居中(统一规格)
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: 56
             FluText { text: qsTr("直播"); font: FluTextStyle.Title }
             Item { Layout.fillWidth: true }
             FluProgressRing {

@@ -179,6 +179,8 @@ class PlayerController : public QObject {
     // 弹幕就绪(entries: time/type/fontSize/fontColor/level/message)
     void danmakuLoaded(QVariantList entries);
     void danmakuLoadFailed(QString message);
+    // 请求了硬解但内核仍落到 CPU 软解(一次起播只提示一次,非阻塞)
+    void hardwareDecodeNotice(QString message);
     // 内核中途死亡的一次性非阻塞提示(热替换重建为后续增强)
     void kernelRecoveredNotice(QString message);
     void screenshotSaved(QString path);
@@ -300,6 +302,11 @@ class PlayerController : public QObject {
     QTimer candidateWatchdog_;   // 候选链逐个尝试:8s 未 file-loaded 换下一候选
     bool waitingFileLoaded_ = false;
     bool waitingRenderReady_ = false;
+    // 连续被内核"装载成功但建不出轨道"拒绝的候选数。这是 B 站 DASH 裸流在
+    // mpv 0.41 上的系统性结果(与单个候选无关),累计到阈值就直接回落 durl,
+    // 不再把十几个候选逐个 loadfile 一遍(每个都要一次完整往返)。
+    int consecutiveKernelRejects_ = 0;
+    bool hwdecNoticeShown_ = false;  // 软解提示一次起播只发一次
     QStringList pendingVideoUrls_;
     QStringList pendingAudioUrls_;
     double pendingStart_ = 0;

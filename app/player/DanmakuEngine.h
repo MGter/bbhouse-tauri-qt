@@ -67,7 +67,13 @@ protected:
     QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
 
 private:
+    // 帧节拍路径(swapTimer/时基推进):若算出的画面与上一帧一致则不重绘,
+    // 避免"可见弹幕集合毫无变化"时仍以屏幕刷新率空转整窗重绘(见 updatePolish)。
     void scheduleFrame();
+    // 结构/属性/几何变化路径:无论画面是否与上一帧一致都必须重新提交绘制。
+    void scheduleFrameForced();
+    // 自驱节拍的上限:不超过屏幕刷新率(见 updatePolish 的限速段)。
+    int frameIntervalMs() const;
     void attachWindow(QQuickWindow *window);
     bool animating() const;
     void applyEntries(const QVariantList &entries);
@@ -92,6 +98,9 @@ private:
     QVector<DanmakuLayout::Visual> frame_;
     QElapsedTimer clock_;
     QTimer wakeTimer_;
+    // 自驱重绘的节拍器:限速到屏幕刷新率,避免空转(见 updatePolish)
+    QElapsedTimer frameClock_;
+    QTimer pacer_;
     QMetaObject::Connection swapConnection_;
     QMetaObject::Connection visibilityConnection_;
     QMetaObject::Connection animationConnection_;
@@ -104,6 +113,8 @@ private:
     bool paused_ = true;
     bool playing_ = false;
     bool enabled_ = true;
+    // 本次 polish 必须重新提交绘制(与上一帧画面是否一致无关)
+    bool forceRepaint_ = false;
     int fontSize_ = 25;
     int opacityPercent_ = 100;
     int speedPercent_ = 100;

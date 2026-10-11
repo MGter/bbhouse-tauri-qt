@@ -205,12 +205,25 @@ FluPage {
                 verticalCenter: parent.verticalCenter
             }
         }
+        // 工具栏规格(与番剧/稍后再看/在线历史统一):锚在标题带右端、垂直居中。
+        // 加载环在按钮左侧,显隐不改变刷新按钮位置 —— 不再紧贴标题文字。
         Row {
+            id: toolbar
+
             spacing: 10
-            anchors.left: title_text.right
-            anchors.leftMargin: 12
+            anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
 
+            FluProgressRing {
+                id: refresh_ring
+
+                indeterminate: true
+                strokeWidth: 3
+                width: 22
+                height: 22
+                visible: DynamicsController.busy
+                anchors.verticalCenter: parent.verticalCenter
+            }
             FluIconButton {
                 id: btn_refresh
 
@@ -219,21 +232,13 @@ FluPage {
                 iconSource: FluentIcons.Refresh
                 iconSize: 14
                 enabled: !DynamicsController.busy
+                anchors.verticalCenter: parent.verticalCenter
                 onClicked: {
                     page.autoRounds = 0
                     page.lastError = ""
                     page.resetPosition()  // 刷新后滚动位置回顶
                     DynamicsController.refresh()
                 }
-            }
-            // 加载环位于按钮之后，显隐时刷新按钮不会移动。
-            FluProgressRing {
-                indeterminate: true
-                strokeWidth: 3
-                width: 22
-                height: 22
-                visible: DynamicsController.busy
-                anchors.verticalCenter: parent.verticalCenter
             }
         }
     }
@@ -381,7 +386,8 @@ FluPage {
 
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: content_area.gridCardWidth
-                    height: implicitHeight
+                    // 统一高度:与当前最高卡片等高,底边对齐(implicitHeight 仍供测高)
+                    height: grid.cellHeight - 16
                     cardItem: cell.cardData
                     onAuthorClicked: function (author) {
                         AppController.openUserSpace(author.mid, author.name, author.faceUrl)
@@ -584,6 +590,10 @@ FluPage {
             page.lastError = message
             info_bar.showError(message, 3000)
             page.evaluateAutoChain()
+        }
+        // 刷新带随机前跨:说明首屏为什么不是最新那条(0 页时不提示)
+        function onRefreshSkipped(pages) {
+            info_bar.showInfo(qsTr("已随机跳过 %1 页，从更早的动态开始").arg(pages), 3000)
         }
     }
 

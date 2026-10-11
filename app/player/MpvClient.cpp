@@ -22,6 +22,17 @@ const char *kObservedDouble[] = {"duration"};
 const char *kObservedString[] = {"hwdec-current"};
 }  // namespace
 
+QString MpvClient::hwdecRequest() {
+    // 排障/强制覆盖:BBHOUSE_HWDEC=d3d11va-copy / no / ...
+    const QString override = qEnvironmentVariable("BBHOUSE_HWDEC").trimmed();
+    if (!override.isEmpty()) return override;
+#ifdef Q_OS_MACOS
+    return QStringLiteral("auto-copy");
+#else
+    return QStringLiteral("auto-safe,auto-copy-safe");
+#endif
+}
+
 MpvClient *MpvClient::create(QObject *parent) {
     MpvLib *lib = MpvLib::instance();
     lib->probe();
@@ -44,14 +55,28 @@ MpvClient *MpvClient::create(QObject *parent) {
         if (result < 0) qWarning() << "mpv option" << name << lib->errorString(result);
     };
     setOpt("vo", "libmpv");
-#ifdef Q_OS_MACOS
+#ifndef Q_OS_MACOS
+    // 硬解策略:显式兜底链,避免非 NVIDIA 机器静默退回软解。
+    // 单值 auto-safe 只覆盖"直出"(zero-copy)方式:本机 NVIDIA 能拿到 nvdec/cuda,
+    // 但本项目强制 OpenGL RHI(main.cpp),AMD/Intel 的 d3d11va/dxva2 直出在 GL 下
+    // 不可用,单值 auto-safe 会直接掉到 CPU 软解。追加 auto-copy-safe(集合含
+    // d3d11va-copy/dxva2-copy 等 copy-back 方式,与 VO 无关)后形成
+    // "先直出 → 再 copy-back → 最后才软解" 的兜底。
+    {
+        const QString requested = hwdecRequest();
+        const int result = lib->setOptionString(handle, "hwdec", requested.toUtf8().constData());
+        if (result < 0) {
+            qWarning() << "mpv option hwdec" << requested << lib->errorString(result)
+                       << "- falling back to auto-safe";
+            setOpt("hwdec", "auto-safe");
+        }
+    }
+#else
     // libmpv's basic render API captures via the current decoded frame.
     // Native VideoToolbox surfaces cannot be converted by the screenshot
     // software scaler on macOS. Keep hardware decoding with CPU-readable
     // frames; do not switch decoders (or restart playback) on each capture.
     setOpt("hwdec", "auto-copy");
-#else
-    setOpt("hwdec", "auto-safe");
 #endif
     setOpt("config", "no");
     // Media always connects directly, including FFmpeg's environment fallback.

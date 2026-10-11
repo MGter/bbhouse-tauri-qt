@@ -30,6 +30,9 @@ class MpvClient : public QObject {
     mpv_handle *handle() const { return handle_.get(); }
     std::shared_ptr<mpv_handle> sharedHandle() const { return handle_; }
     static QString lastCreateError();
+    // 本次内核请求的 --hwdec 值(含 BBHOUSE_HWDEC 覆盖)。上层据此判断
+    // "用户明确要求软解" 与 "请求了硬解但内核落到软解" 的区别。
+    static QString hwdecRequest();
 
     // 选项/属性
     void setOptionString(const QString &name, const QString &value);

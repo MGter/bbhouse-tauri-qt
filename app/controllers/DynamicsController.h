@@ -108,6 +108,8 @@ class DynamicsController : public QObject {
     void scrollAnchorChanged();
     // 登录失效/网络失败等(message 为本地化文案,QML 经 InfoBar 呈现;已加载内容保留)
     void loadFailed(QString message);
+    // 刷新时随机前跨的页数(仅 >0 时发出,供 QML 说明"为什么最新那条不在最前面")
+    void refreshSkipped(int pages);
 
    private:
     friend class DynamicsControllerTest; // Offline feed/view fixtures; no live API requests.
@@ -134,7 +136,7 @@ class DynamicsController : public QObject {
     void startLoad();
     void finishLoad(int generation, const QList<DynamicFeedItem> &collected,
                     const QString &nextOffset, bool hasMore, const QString &error,
-                    bool unauthorized);
+                    bool unauthorized, int skipped);
     void mergeItems(const QList<DynamicFeedItem> &collected);
     void decorateDuplicates();
     void reproject();
@@ -150,6 +152,7 @@ class DynamicsController : public QObject {
     static QVariantMap toItemMap(const DynamicFeedItem &item);
 
     int generation_ = 0;         // 刷新递增,使在途回应作废(主线程读写)
+    int skipPages_ = 0;          // 刷新要随机前跨的页数(startLoad 取走后归零,仅首轮生效)
     bool ended_ = false;         // 主线程
     bool unauthorized_ = false;  // 主线程
     bool refreshPending_ = false;  // 刷新后未成功重建池(成功一轮即整体替换)

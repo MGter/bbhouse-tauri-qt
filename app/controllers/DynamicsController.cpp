@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include <QMetaObject>
+#include <QRandomGenerator>
 #include <QThreadPool>
 
 #include "core/ApiErrors.h"
@@ -128,6 +129,10 @@ void DynamicsController::refresh() {
     aidOccurrences_.clear();
     pendingZoneAids_.clear();
     refreshPending_ = true;
+    // 首次收集前随机前跨 0~2 页,让刷新后的首屏不止是固定的第一页
+    // (offset 是不透明游标,只能顺着走,所以用丢弃前几页来达到"换一批")。
+    // 只有刷新带这个偏移,后续滚动续载从落脚点自然继续。
+    skipPages_ = QRandomGenerator::global()->bounded(3);
     emit endedChanged();
     emit unauthorizedChanged();
     updateZoneGate();
@@ -147,12 +152,15 @@ void DynamicsController::startLoad() {
     const int generation = generation_;
     const QString offset = offset_;
     const FilterSnapshot snapshot{categoryFilter_, zoneFilter_, searchLower_};
+    const int skip = skipPages_;
+    skipPages_ = 0;  // 只有刷新后的第一轮带前跨,续载不受影响
 
-    runControllerTask(this, [this, generation, offset, snapshot] {
+    runControllerTask(this, [this, generation, offset, snapshot, skip] {
         QList<DynamicFeedItem> collected;
         QString nextOffset = offset;
         bool hasMore = true;
         bool unauthorized = false;
+        int skipped = 0;
         QString error;
         QString cookie;
         try {
@@ -164,7 +172,37 @@ void DynamicsController::startLoad() {
             BilibiliApiClient &api = *BilibiliApiClient::instance();
             int pages = 0;
             int matched = 0;
-            while (pages < kMaxPagesPerRound && matched < kTargetMatchesPerRound && hasMore) {
+            // 随机前跨:先顺着 offset 丢弃 0~2 页,不收集内容。
+            // 关注动态很少时前跨可能直接踩到底,此时回退到从头收集,避免空屏。
+            const QString anchorOffset = nextOffset;
+            if (skip > 0) {
+                for (int i = 0; i < skip && hasMore; ++i) {
+                    DynamicFeedPage page;
+                    try {
+                        page = DynamicApi::fetchFeed(api, cookie, nextOffset);
+                    } catch (const ApiUnauthorizedError &e) {
+                        unauthorized = true;
+                        error = QString::fromUtf8(e.what());
+                        break;
+                    } catch (const std::exception &e) {
+                        error = QString::fromUtf8(e.what());
+                        break;
+                    }
+                    if (!page.hasMore || page.offset.trimmed().isEmpty() || page.offset == nextOffset) {
+                        hasMore = false;
+                        break;
+                    }
+                    nextOffset = page.offset;
+                    skipped++;
+                }
+                if (error.isEmpty() && !hasMore) {
+                    // 前跨把可翻的页耗尽 -> 放弃前跨,从原游标重新收集
+                    nextOffset = anchorOffset;
+                    hasMore = true;
+                    skipped = 0;
+                }
+            }
+            while (error.isEmpty() && pages < kMaxPagesPerRound && matched < kTargetMatchesPerRound && hasMore) {
                 DynamicFeedPage page;
                 try {
                     page = DynamicApi::fetchFeed(api, cookie, nextOffset);
@@ -194,15 +232,15 @@ void DynamicsController::startLoad() {
         } else {
             hasMore = false;
         }
-        return [this, generation, collected, nextOffset, hasMore, error, unauthorized] {
-            finishLoad(generation, collected, nextOffset, hasMore, error, unauthorized);
+        return [this, generation, collected, nextOffset, hasMore, error, unauthorized, skipped] {
+            finishLoad(generation, collected, nextOffset, hasMore, error, unauthorized, skipped);
         };
     });
 }
 
 void DynamicsController::finishLoad(int generation, const QList<DynamicFeedItem> &collected,
                                     const QString &nextOffset, bool hasMore,
-                                    const QString &error, bool unauthorized) {
+                                    const QString &error, bool unauthorized, int skipped) {
     if (generation != generation_) return;  // Expired page results cannot clear a newer busy state.
     busy_.store(false);
     emit busyChanged();
@@ -217,6 +255,7 @@ void DynamicsController::finishLoad(int generation, const QList<DynamicFeedItem>
     }
     unauthorized_ = false;
     emit unauthorizedChanged();
+    if (skipped > 0) emit refreshSkipped(skipped);
 
     // 刷新成功一轮:丢弃旧池与旧投影,以本轮数据重建(去重分组已在 refresh 清空)
     if (refreshPending_) {

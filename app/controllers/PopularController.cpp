@@ -121,17 +121,49 @@ void PopularController::setPageIndex(int value) {
     emit pageIndexChanged();
 }
 
+bool PopularController::canPrevPopularPage() const {
+    return activeTab_ == QStringLiteral("popular") && !busy() && state().page > 1;
+}
+
+bool PopularController::canNextPopularPage() const {
+    if (activeTab_ != QStringLiteral("popular") || busy() || !state().loaded) return false;
+    // 尚未探到榜单末页时一律放行(乐观);探到后按边界封顶。
+    return popularMaxPage_ <= 0 || state().page < popularMaxPage_;
+}
+
+void PopularController::nextPopularPage() { beginPageFetch(state().page + 1); }
+void PopularController::prevPopularPage() { beginPageFetch(state().page - 1); }
+
 void PopularController::beginFetch(bool replace) {
     if (activeTab_ == "weekly" && weeklyNumber_ <= 0) return;
     ++generation_;
     State &current = cache_[key()];
     current.error.clear();
     current.busy = true;
-    replace_ = replace;
+    mode_ = replace ? FetchMode::Replace : FetchMode::Append;
     pendingPage_ = replace ? 1 : current.nextPage;
     scannedPages_ = 0;
     emit stateChanged();
+    emit pageInfoChanged();
     startFetch(generation_, key(), pendingPage_);
+}
+
+void PopularController::beginPageFetch(int page) {
+    if (activeTab_ != QStringLiteral("popular") || busy() || page < 1) return;
+    if (popularMaxPage_ > 0 && page > popularMaxPage_) {
+        emit pageNotice(tr("已经是最后一页了"));
+        return;
+    }
+    ++generation_;
+    State &current = cache_[key()];
+    current.error.clear();
+    current.busy = true;
+    mode_ = FetchMode::PageJump;
+    pendingPage_ = page;
+    scannedPages_ = 0;
+    emit stateChanged();
+    emit pageInfoChanged();
+    startFetch(generation_, key(), page);
 }
 
 void PopularController::startFetch(quint64 generation, const QString &selectionKey, int page) {
@@ -176,12 +208,14 @@ void PopularController::startFetch(quint64 generation, const QString &selectionK
 void PopularController::finishFetch(quint64 generation, const QString &selectionKey, int page,
                                    const PopularPage &result, const QString &error) {
     if (generation != generation_ || selectionKey != key() || page != pendingPage_ || !busy()) return;
+    const FetchMode mode = mode_;
     State &current = cache_[selectionKey];
     QString failure = error;
     QVariantList additions;
     if (failure.isEmpty()) {
         QSet<QString> seen;
-        if (!replace_) {
+        // 累加模式才需要与既有池去重;整页替换与翻页是全新一屏
+        if (mode == FetchMode::Append) {
             for (const auto &value : current.items) seen.insert(value.toMap().value("videoKey").toString());
         }
         for (const auto &value : result.items) {
@@ -190,31 +224,45 @@ void PopularController::finishFetch(quint64 generation, const QString &selection
             seen.insert(videoKey);
             additions.append(value);
         }
-        ++scannedPages_;
-        if (activeTab_ == "popular" && additions.isEmpty() && result.hasMore) {
-            if (scannedPages_ < kMaxPagesPerOperation) {
-                pendingPage_ = page + 1;
-                startFetch(generation, selectionKey, pendingPage_);
+        if (mode == FetchMode::PageJump) {
+            // 翻页落到空页 = 越过末页:不替换画面(避免闪成空白),记住边界并提示
+            if (additions.isEmpty()) {
+                current.busy = false;
+                emit stateChanged();
+                emit pageInfoChanged();
+                emit pageNotice(page > 1 ? tr("已经是最后一页了") : tr("该页没有内容"));
                 return;
             }
-            failure = tr("热门分页超过安全上限，请刷新重试");
+        } else {
+            ++scannedPages_;
+            if (activeTab_ == "popular" && additions.isEmpty() && result.hasMore) {
+                if (scannedPages_ < kMaxPagesPerOperation) {
+                    pendingPage_ = page + 1;
+                    startFetch(generation, selectionKey, pendingPage_);
+                    return;
+                }
+                failure = tr("热门分页超过安全上限，请刷新重试");
+            }
         }
     }
     current.busy = false;
     current.error = failure;
     if (failure.isEmpty()) {
-        if (replace_) current.items = additions;
-        else current.items.append(additions);
+        if (mode == FetchMode::Append) current.items.append(additions);
+        else current.items = additions;
         // 累加模式(综合热门)下超出内存上限时从头部裁剪,保留最近追加的条目
         if (activeTab_ == "popular" && current.items.size() > kMaxPoolSize) {
             current.items = current.items.mid(current.items.size() - kMaxPoolSize);
         }
+        // 翻页/刷新后当前页码即本次请求页;加载更多不改变正在看的页码
+        if (mode != FetchMode::Append) current.page = page;
         current.nextPage = page + 1;
         current.hasMore = activeTab_ == "popular" && result.hasMore;
         current.loaded = true;
         current.description = result.description;
     }
     emit stateChanged();
+    emit pageInfoChanged();
 }
 
 void PopularController::refreshPeriods() {
@@ -287,9 +335,10 @@ void PopularController::releasePageCache() {
     periodsBusy_ = false;
     periodsLoaded_ = false;
     periodsError_.clear();
-    replace_ = true;
+    mode_ = FetchMode::Replace;
     pendingPage_ = 1;
     scannedPages_ = 0;
+    popularMaxPage_ = 0;
     // 页面记忆指向已丢弃的列表，超时后回到首屏。
     searchText_.clear();
     scrollOffset_ = 0;
@@ -298,4 +347,5 @@ void PopularController::releasePageCache() {
     emit searchTextChanged();
     emit scrollOffsetChanged();
     emit pageIndexChanged();
+    emit pageInfoChanged();
 }

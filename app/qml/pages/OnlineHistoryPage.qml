@@ -140,28 +140,41 @@ FluPage {
                 verticalCenter: parent.verticalCenter
             }
         }
-    }
+        // 工具栏规格(与其他页面统一):加载环 + 仅图标刷新按钮,锚在标题带右端垂直居中。
+        // 原先按钮单独占标题带下方一行,现并入标题带。
+        Row {
+            id: toolbar
 
-    // 工具栏:仅一个仅图标刷新按钮(无文字),右缘与瀑布流内容区右缘对齐
-    FluIconButton {
-        id: btn_refresh
+            spacing: 10
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
 
-        width: 34
-        height: 34
-        iconSource: FluentIcons.Refresh
-        iconSize: 14
-        enabled: !OnlineHistoryController.busy
-        anchors {
-            top: title_band.bottom
-            topMargin: 4
-            right: parent.right
-            rightMargin: page.gridRightInset
-        }
-        onClicked: {
-            page.autoRounds = 0
-            page.lastError = ""
-            grid.contentY = 0  // 刷新后滚动位置回顶
-            OnlineHistoryController.refresh()
+            FluProgressRing {
+                id: refresh_ring
+
+                indeterminate: true
+                strokeWidth: 3
+                width: 22
+                height: 22
+                visible: OnlineHistoryController.busy
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            FluIconButton {
+                id: btn_refresh
+
+                width: 34
+                height: 34
+                iconSource: FluentIcons.Refresh
+                iconSize: 14
+                enabled: !OnlineHistoryController.busy
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: {
+                    page.autoRounds = 0
+                    page.lastError = ""
+                    grid.contentY = 0  // 刷新后滚动位置回顶
+                    OnlineHistoryController.refresh()
+                }
+            }
         }
     }
 
@@ -170,7 +183,7 @@ FluPage {
         id: content_area
 
         anchors {
-            top: btn_refresh.bottom
+            top: title_band.bottom
             topMargin: 8
             left: parent.left
             right: parent.right
@@ -232,7 +245,8 @@ FluPage {
 
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: page.gridCardWidth
-                    height: implicitHeight
+                    // 统一高度:与当前最高卡片等高,底边对齐(implicitHeight 仍供测高)
+                    height: grid.cellHeight - 16
                     cardItem: cell.cardData
                     onAuthorClicked: function (author) {
                         AppController.openUserSpace(author.mid, author.name, author.faceUrl)
